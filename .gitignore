@@ -5,6 +5,13 @@
 ## User settings
 xcuserdata/
 
+## App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+# Explicitly allow pkg files even if other build artifacts are ignored
+!*.pkg
+
 ## Obj-C/Swift specific
 *.hmap
 
