@@ -15,6 +15,7 @@ xcuserdata/
 *.dSYM
 # Explicitly allow pkg files even if other build artifacts are ignored
 !*.pkg
+*.DS_Store
 
 ## Obj-C/Swift specific
 *.hmap
