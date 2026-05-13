@@ -118,7 +118,12 @@ func extractOrgId(from data: Data) -> String? {
     return nil
 }
 
+
 // ── Fetch chain ───────────────────────────────────────────────────────────────
+
+// Cached org ID — resolved once at startup, reused on every refresh.
+// Only cleared if the server returns 401/403 so we re-resolve after a cookie change.
+var cachedOrgId: String? = nil
 
 func fetchUsage(completion: @escaping (UsageResult) -> Void) {
     let cookie = readSessionKey()
@@ -126,8 +131,16 @@ func fetchUsage(completion: @escaping (UsageResult) -> Void) {
         completion(UsageResult(status: "no_cookie")); return
     }
 
+    // If we already have the org ID, skip the first API call entirely
+    if let orgId = cachedOrgId {
+        fetchOrgUsage(orgId: orgId, cookie: cookie, completion: completion)
+        return
+    }
+
+    // First run (or after cookie change): resolve and cache the org ID
     apiGet(path: "/api/organizations", cookie: cookie) { data, code in
         if code == 401 || code == 403 {
+            cachedOrgId = nil
             completion(UsageResult(status: "invalid_cookie")); return
         }
         guard let data = data else {
@@ -140,18 +153,22 @@ func fetchUsage(completion: @escaping (UsageResult) -> Void) {
             completion(UsageResult(status: "org_not_found")); return
         }
 
-        print("[DEBUG] org ID:", orgId)
+        cachedOrgId = orgId  // cache it — never look it up again unless needed
+        print("[DEBUG] org ID resolved and cached:", orgId)
         fetchOrgUsage(orgId: orgId, cookie: cookie, completion: completion)
     }
 }
+
 
 func fetchOrgUsage(orgId: String, cookie: String,
                    completion: @escaping (UsageResult) -> Void) {
     apiGet(path: "/api/organizations/\(orgId)/usage", cookie: cookie) { data, code in
         if code == 401 || code == 403 {
+            cachedOrgId = nil  // force re-resolve after cookie is updated
             completion(UsageResult(status: "invalid_cookie")); return
         }
         guard let data = data else {
+            // Network hiccup — don't clear cache, just skip this tick
             completion(UsageResult(status: "no_data")); return
         }
 
