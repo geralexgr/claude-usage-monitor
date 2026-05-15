@@ -159,20 +159,6 @@ claudemonitor-status   # check if it's running
 
 ---
 
-## Sharing with others
-
-Nothing is hardcoded. Anyone can use this app — they just need their own session cookie.
-
-1. Give them `ClaudeUsage.swift`
-2. They compile it:
-   ```bash
-   swiftc ClaudeUsage.swift -o ClaudeUsage -framework Cocoa
-   ```
-3. They run it once, click **📝 Open Config File** in the menu bar, paste their own `sessionKey` and save
-
-The org ID and all usage data are fetched dynamically from their own account.
-
----
 
 ## Files created by the app
 
