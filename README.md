@@ -167,3 +167,7 @@ claudemonitor-status   # check if it's running
 | `~/.claude_usage.conf` | Your session cookie (edit this to update credentials) |
 | `~/Library/LaunchAgents/com.claude.usagemonitor.plist` | macOS service definition |
 | `/tmp/claude_usage.log` | App logs (only when running as a service) |
+
+
+## Screenshots
+![Green usage](assets/green-usage.png)
