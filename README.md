@@ -131,6 +131,25 @@ launchctl load ~/Library/LaunchAgents/com.claude.usagemonitor.plist
 The menu bar icon will appear immediately. The service starts automatically on every login.
 `KeepAlive: true` means macOS will restart it automatically if it ever crashes.
 
+### Updating — rebuild safely while the service runs
+
+Don't compile straight over the binary while the service is running. macOS caches the
+running binary's code signature, so overwriting the file in place makes the next launch
+fail with `OS_REASON_CODESIGNING` and the menu bar icon disappears.
+
+Build to a new file, move it into place (this swaps in a new file instead of editing the
+running one), then restart the service:
+
+```bash
+git pull
+swiftc ClaudeUsage.swift -o ClaudeUsage.new -framework Cocoa && mv -f ClaudeUsage.new ClaudeUsage
+launchctl kickstart -k gui/$(id -u)/com.claude.usagemonitor
+```
+
+If the icon doesn't come back, check `launchctl print gui/$(id -u)/com.claude.usagemonitor | grep "last exit"`.
+`OS_REASON_CODESIGNING` there means the binary was overwritten in place — run the two
+commands above again.
+
 ---
 
 ## Shell aliases (zshrc)
