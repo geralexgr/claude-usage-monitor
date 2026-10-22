@@ -66,15 +66,20 @@ Save the file. The app picks it up on the next 10-second refresh — no restart 
 
 ## Menu bar
 
+The menu bar shows a small progress ring for the 5-hour window, next to the percentage used.
+
 | Icon | Meaning |
 |---|---|
-| 🟢 X% | Under 50% of 5-hour window used |
-| 🟡 X% | 50–79% used |
-| 🔴 X% | 80%+ used |
-| ⚪️ … | Loading |
-| 🔑 | Cookie expired — update config file |
+| Green ring · X% | Under 50% of 5-hour window used |
+| Orange ring · X% | 50–79% used |
+| Red ring · X% | 80%+ used |
+| Empty ring · … | Loading |
+| 🔑 Bad cookie | Cookie expired — update config file |
+| ⚙︎ Setup needed | No cookie in the config file yet |
 
-The dropdown shows both your **5-hour** and **7-day** usage windows with reset countdowns.
+The dropdown follows the current macOS look: SF Symbols, rounded cards and capsule
+progress bars for the **5-hour** and **7-day** windows with reset countdowns, and
+light/dark mode support. It keeps updating while it's open.
 
 ---
 
@@ -170,4 +175,4 @@ claudemonitor-status   # check if it's running
 
 
 ## Screenshots
-![Green usage](assets/green-usage.png)
+![Claude Usage menu](assets/usage-menu.png)
