@@ -78,8 +78,8 @@ The menu bar shows a small progress ring for the 5-hour window, next to the perc
 | ⚙︎ Setup needed | No cookie in the config file yet |
 
 The dropdown follows the current macOS look: SF Symbols, rounded cards and capsule
-progress bars for the **5-hour** and **7-day** windows with reset countdowns, and
-light/dark mode support. It keeps updating while it's open.
+progress bars for the **5-hour** and **7-day** windows, a prominent reset countdown with the exact reset time, and
+light/dark mode support. It refreshes when you open it and keeps updating while it's open.
 
 ---
 
@@ -138,17 +138,22 @@ running binary's code signature, so overwriting the file in place makes the next
 fail with `OS_REASON_CODESIGNING` and the menu bar icon disappears.
 
 Build to a new file, move it into place (this swaps in a new file instead of editing the
-running one), then restart the service:
+running one), then unload and reload the service:
 
 ```bash
 git pull
 swiftc ClaudeUsage.swift -o ClaudeUsage.new -framework Cocoa && mv -f ClaudeUsage.new ClaudeUsage
-launchctl kickstart -k gui/$(id -u)/com.claude.usagemonitor
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.claude.usagemonitor.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.claude.usagemonitor.plist
 ```
 
+A plain `launchctl kickstart -k` restart isn't enough: launchd can keep the old signature
+cached for the job and refuse the new binary with `OS_REASON_CODESIGNING`. Unloading and
+reloading the job (as above) clears that.
+
 If the icon doesn't come back, check `launchctl print gui/$(id -u)/com.claude.usagemonitor | grep "last exit"`.
-`OS_REASON_CODESIGNING` there means the binary was overwritten in place — run the two
-commands above again.
+`OS_REASON_CODESIGNING` there means the job still has the old signature cached — run the
+`bootout` and `bootstrap` commands again.
 
 ---
 
