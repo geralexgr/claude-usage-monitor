@@ -48,8 +48,8 @@ func readSessionKey() -> String {
 struct UsageResult {
     var fiveHourPct:   Double = 0
     var sevenDayPct:   Double = 0
-    var fiveHourReset: String = ""
-    var sevenDayReset: String = ""
+    var fiveHourReset: Date?   = nil
+    var sevenDayReset: Date?   = nil
     var status:        String = ""
 }
 
@@ -182,9 +182,8 @@ func fetchOrgUsage(orgId: String, cookie: String,
         func pct(_ key: String) -> Double {
             (json[key] as? [String: Any])?["utilization"] as? Double ?? 0
         }
-        func resetAt(_ key: String) -> String {
-            let s = (json[key] as? [String: Any])?["resets_at"] as? String ?? ""
-            return formatReset(s)
+        func resetAt(_ key: String) -> Date? {
+            parseISO((json[key] as? [String: Any])?["resets_at"] as? String ?? "")
         }
 
         completion(UsageResult(
@@ -199,14 +198,15 @@ func fetchOrgUsage(orgId: String, cookie: String,
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
-func formatReset(_ iso: String) -> String {
-    guard !iso.isEmpty else { return "—" }
+// Reset times are kept as dates and formatted at draw time, so the countdown
+// stays current between fetches and when the menu is opened.
+func parseISO(_ iso: String) -> Date? {
+    guard !iso.isEmpty else { return nil }
     let f = ISO8601DateFormatter()
     f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let d = f.date(from: iso) { return timeUntil(d) }
+    if let d = f.date(from: iso) { return d }
     f.formatOptions = [.withInternetDateTime]
-    if let d = f.date(from: iso) { return timeUntil(d) }
-    return "—"
+    return f.date(from: iso)
 }
 
 func timeUntil(_ date: Date) -> String {
@@ -216,7 +216,16 @@ func timeUntil(_ date: Date) -> String {
     let m = (Int(secs) % 3600) / 60
     if h >= 24 { return "in \(h/24)d \(h%24)h" }
     if h > 0   { return "in \(h)h \(m)m" }
-    return "in \(m)m"
+    return "in \(max(1, m))m"
+}
+
+// Wall-clock time of the reset: "14:30" today, "Sat 02:00" on another day.
+// Follows the user's 12/24-hour setting.
+func clockTime(_ date: Date) -> String {
+    let f = DateFormatter()
+    f.setLocalizedDateFormatFromTemplate(
+        Calendar.current.isDateInToday(date) ? "jmm" : "EEEjmm")
+    return f.string(from: date)
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
@@ -298,24 +307,31 @@ class HeaderView: NSView {
 class UsageCardView: NSView {
     let title: String
     var pct:   Double = 0
-    var reset: String = "—"
+    var reset: Date?  = nil
     override var isFlipped: Bool { true }
+
+    static let clock = symbol("clock", size: 12, weight: .medium)
 
     init(title: String) {
         self.title = title
-        super.init(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 78))
+        super.init(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 86))
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    var notStarted: Bool { reset == nil && pct == 0 }
+
     var resetText: String {
-        reset == "—" && pct == 0 ? "Not started yet" : "Resets \(reset)"
+        if notStarted { return "Not started yet" }
+        guard let r = reset else { return "Reset time unknown" }
+        return "Resets \(timeUntil(r))"
     }
 
-    func update(pct: Double, reset: String) {
+    func update(pct: Double, reset: Date?) {
         self.pct = pct; self.reset = reset
-        setAccessibilityLabel("\(title), \(Int(pct)) percent used, \(resetText)")
+        let at = reset.map { ", at \(clockTime($0))" } ?? ""
+        setAccessibilityLabel("\(title), \(Int(pct)) percent used, \(resetText)\(at)")
         needsDisplay = true
     }
 
@@ -346,9 +362,29 @@ class UsageCardView: NSView {
             NSBezierPath(roundedRect: fill, xRadius: 3, yRadius: 3).fill()
         }
 
-        (resetText as NSString).draw(at: NSPoint(x: inner.minX, y: inner.minY + 38), withAttributes: [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.secondaryLabelColor])
+        // Reset row: clock icon + countdown on the left, wall-clock time on the right
+        let rowY = inner.minY + 40
+        var x = inner.minX
+        if let clock = UsageCardView.clock {
+            let s = clock.size
+            tinted(clock, notStarted ? .secondaryLabelColor : .labelColor).draw(
+                in: NSRect(x: x, y: rowY + (17 - s.height) / 2, width: s.width, height: s.height),
+                from: .zero, operation: .sourceOver, fraction: 1,
+                respectFlipped: true, hints: nil)
+            x += s.width + 6
+        }
+        (resetText as NSString).draw(at: NSPoint(x: x, y: rowY), withAttributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: notStarted ? NSColor.secondaryLabelColor : NSColor.labelColor])
+
+        if let r = reset {
+            let atStr = clockTime(r) as NSString
+            let atAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular),
+                .foregroundColor: NSColor.secondaryLabelColor]
+            let aw = atStr.size(withAttributes: atAttrs).width
+            atStr.draw(at: NSPoint(x: inner.maxX - aw, y: rowY + 1), withAttributes: atAttrs)
+        }
     }
 }
 
@@ -411,12 +447,15 @@ func viewItem(_ v: NSView) -> NSMenuItem {
 
 // ── App Delegate ──────────────────────────────────────────────────────────────
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     var statusItem: NSStatusItem!
     var timer: Timer?
     var result      = UsageResult()
     var lastUpdated = "--:--:--"
+    var fetching    = false   // one request chain at a time
+    var stale       = false   // last refresh failed; still showing the previous data
+    var activity: NSObjectProtocol?
 
     let menu         = NSMenu()
     let header       = HeaderView()
@@ -429,7 +468,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.imagePosition = .imageLeading
         statusItem.button?.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        menu.delegate = self
         statusItem.menu = menu
+        // An accessory app with no windows is a prime App Nap target: macOS throttles it,
+        // so clicks on the menu bar icon can take seconds to be answered. Opt out.
+        activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep],
+            reason: "Menu bar usage monitor must respond to clicks immediately")
+        // Fetch right away after sleep instead of showing pre-sleep numbers
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.doFetch()
+        }
         render()
         doFetch()
         // .common mode keeps the menu updating while it is open
@@ -438,12 +488,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         timer = t
     }
 
+    // Opening the menu redraws the countdowns and pulls fresh numbers
+    func menuWillOpen(_ m: NSMenu) {
+        render()
+        doFetch()
+    }
+
     func doFetch() {
+        // With a 15s timeout and a 10s timer, slow responses used to pile up requests
+        guard !fetching else { return }
+        fetching = true
         fetchUsage { [weak self] r in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                self.result      = r
-                self.lastUpdated = nowStr()
+                self.fetching = false
+                let transient = !["ok", "no_cookie", "invalid_cookie"].contains(r.status)
+                if transient && self.result.status == "ok" {
+                    // Network hiccup (e.g. right after wake): keep the last good numbers
+                    // instead of swapping the whole menu for an error card
+                    self.stale = true
+                } else {
+                    self.result      = r
+                    self.stale       = false
+                    self.lastUpdated = nowStr()
+                }
                 self.render()
             }
         }
@@ -467,6 +535,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch result.status {
         case "":   header.subtitle = "Loading…"
+        case "ok" where stale:
+                   header.subtitle = "Offline — showing data from \(lastUpdated)"
         case "ok": header.subtitle = "Updated \(lastUpdated)  ·  refreshes every 10s"
         default:   header.subtitle = "Last checked \(lastUpdated)"
         }
